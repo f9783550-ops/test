@@ -1,0 +1,8 @@
+name: Chowany
+version: 1.0
+main: pl.pcraft.chowany.ChowanyPlugin
+api-version: "1.21"
+author: Pcraft600
+commands:
+  chowany:
+    usage: /chowany <start|stop|test>
