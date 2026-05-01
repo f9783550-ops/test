@@ -13,6 +13,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -38,7 +39,8 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
     private HashMap<Player, Material> disguisedPlayers = new HashMap<>();
     private static final int CD = 30;
     private static final String ADMIN = "Pcraft600";
-    private static final Material[] BLOCKS = {
+    private List<Material> blockList = new ArrayList<>();
+    private static final List<Material> DEFAULT_BLOCKS = Arrays.asList(
         Material.NETHERRACK,
         Material.NETHER_BRICKS,
         Material.CRIMSON_STEM,
@@ -48,11 +50,14 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         Material.NETHER_WART_BLOCK,
         Material.WARPED_WART_BLOCK,
         Material.BLACKSTONE
-    };
+    );
     BukkitRunnable timerTask;
 
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
+        blockList.addAll(DEFAULT_BLOCKS);
+        EditCommand ec = new EditCommand(this);
+        getServer().getPluginManager().registerEvents(ec, this);
         getLogger().info("Chowany Plugin - Arena Piekielna gotowa!");
     }
 
@@ -60,12 +65,16 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         if (gameRunning) stopGame();
     }
 
+    public List<Material> getBlockList() { return blockList; }
+    public void setBlockList(List<Material> list) { this.blockList = list; }
+
     public boolean onCommand(CommandSender s, Command c, String l, String[] a) {
         if (!l.equalsIgnoreCase("chowany")) return false;
         if (a.length == 0) {
             s.sendMessage(ChatColor.GOLD + "/chowany start - Rozpocznij gre");
             s.sendMessage(ChatColor.GOLD + "/chowany stop - Zakoncz gre");
             s.sendMessage(ChatColor.GOLD + "/chowany test - Testuj przemiane");
+            s.sendMessage(ChatColor.GOLD + "/chowany edit - Edytuj bloki");
             return true;
         }
         if (a[0].equalsIgnoreCase("test")) {
@@ -77,6 +86,17 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
             }
             giveCompass(p);
             p.sendMessage(ChatColor.GREEN + "Kompas testowy! Skacz by wrocic.");
+            return true;
+        }
+        if (a[0].equalsIgnoreCase("edit")) {
+            if (!(s instanceof Player)) return true;
+            Player p = (Player) s;
+            if (!p.getName().equalsIgnoreCase(ADMIN)) {
+                p.sendMessage(ChatColor.RED + "Tylko admin!");
+                return true;
+            }
+            EditCommand ec = new EditCommand(this);
+            ec.onCommand(s, c, l, new String[]{});
             return true;
         }
         if (a[0].equalsIgnoreCase("start")) {
@@ -245,7 +265,9 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
 
     void openGUI(Player p) {
         Inventory inv = Bukkit.createInventory(null, 9, Component.text("Wybierz blok", NamedTextColor.DARK_PURPLE));
-        for (Material m : BLOCKS) inv.addItem(new ItemStack(m));
+        for (Material m : blockList) {
+            if (m != null && m.isBlock()) inv.addItem(new ItemStack(m));
+        }
         p.openInventory(inv);
     }
 
@@ -314,7 +336,9 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         e.setCancelled(true);
         Player p = e.getPlayer();
-        if (p.getName().equalsIgnoreCase(ADMIN) || (gameRunning && hiders.contains(p))) openGUI(p);
+        if (gameRunning && hiders.contains(p)) {
+            openGUI(p);
+        }
     }
 
     @EventHandler
