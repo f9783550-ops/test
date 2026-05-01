@@ -5,4 +5,4 @@ api-version: "1.21"
 author: Pcraft600
 commands:
   chowany:
-    usage: /chowany <start|stop|test>
+    usage: /chowany <start|stop|test|edit>
