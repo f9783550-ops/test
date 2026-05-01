@@ -5,6 +5,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.title.Title;
 import net.kyori.adventure.bossbar.BossBar;
 import org.bukkit.*;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -36,19 +37,15 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
     private int gameTime = 300;
     private HashMap<Player, Long> cooldowns = new HashMap<>();
     private HashMap<Player, Material> disguisedPlayers = new HashMap<>();
+    private HashMap<Player, Location> deathLocations = new HashMap<>();
     private static final int CD = 30;
     private static final String ADMIN = "Pcraft600";
+    private static final int SPECTATOR_LIMIT = 100;
     private List<Material> blockList = new ArrayList<>();
     private static final List<Material> DEFAULT_BLOCKS = Arrays.asList(
-        Material.NETHERRACK,
-        Material.NETHER_BRICKS,
-        Material.CRIMSON_STEM,
-        Material.WARPED_STEM,
-        Material.CRIMSON_NYLIUM,
-        Material.WARPED_NYLIUM,
-        Material.NETHER_WART_BLOCK,
-        Material.WARPED_WART_BLOCK,
-        Material.BLACKSTONE
+        Material.NETHERRACK, Material.NETHER_BRICKS, Material.CRIMSON_STEM,
+        Material.WARPED_STEM, Material.CRIMSON_NYLIUM, Material.WARPED_NYLIUM,
+        Material.NETHER_WART_BLOCK, Material.WARPED_WART_BLOCK, Material.BLACKSTONE
     );
     BukkitRunnable timerTask;
 
@@ -79,44 +76,29 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         if (a[0].equalsIgnoreCase("test")) {
             if (!(s instanceof Player)) return true;
             Player p = (Player) s;
-            if (!p.getName().equalsIgnoreCase(ADMIN)) {
-                p.sendMessage(ChatColor.RED + "Tylko admin!");
-                return true;
-            }
-            giveCompass(p);
-            p.sendMessage(ChatColor.GREEN + "Kompas testowy! Prawy klik = wybierz blok.");
+            if (!p.getName().equalsIgnoreCase(ADMIN)) { p.sendMessage(ChatColor.RED + "Tylko admin!"); return true; }
+            giveTransformPotion(p);
+            p.sendMessage(ChatColor.GREEN + "Mikstura Przemiany! Prawy klik = wybierz blok.");
             return true;
         }
         if (a[0].equalsIgnoreCase("edit")) {
             if (!(s instanceof Player)) return true;
             Player p = (Player) s;
-            if (!p.getName().equalsIgnoreCase(ADMIN)) {
-                p.sendMessage(ChatColor.RED + "Tylko admin!");
-                return true;
-            }
+            if (!p.getName().equalsIgnoreCase(ADMIN)) { p.sendMessage(ChatColor.RED + "Tylko admin!"); return true; }
             EditCommand ec = new EditCommand(this);
             ec.onCommand(s, c, l, new String[]{});
             return true;
         }
         if (a[0].equalsIgnoreCase("start")) {
-            if (gameRunning) {
-                s.sendMessage(ChatColor.RED + "Gra juz trwa!");
-                return true;
-            }
+            if (gameRunning) { s.sendMessage(ChatColor.RED + "Gra juz trwa!"); return true; }
             List<Player> pl = new ArrayList<>(getServer().getOnlinePlayers());
             pl.removeIf(x -> x.getName().equalsIgnoreCase(ADMIN));
-            if (pl.size() < 3) {
-                s.sendMessage(ChatColor.RED + "Minimum 3 graczy!");
-                return true;
-            }
+            if (pl.size() < 3) { s.sendMessage(ChatColor.RED + "Minimum 3 graczy!"); return true; }
             startGame(pl);
             return true;
         }
         if (a[0].equalsIgnoreCase("stop")) {
-            if (!gameRunning) {
-                s.sendMessage(ChatColor.RED + "Gra nie trwa!");
-                return true;
-            }
+            if (!gameRunning) { s.sendMessage(ChatColor.RED + "Gra nie trwa!"); return true; }
             stopGame();
             s.sendMessage(ChatColor.GREEN + "Gra zatrzymana!");
             return true;
@@ -126,49 +108,35 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
 
     void startGame(List<Player> pl) {
         gameRunning = true;
-        helpers.clear();
-        hiders.clear();
-        spectators.clear();
-        disguisedPlayers.clear();
-        cooldowns.clear();
+        helpers.clear(); hiders.clear(); spectators.clear();
+        disguisedPlayers.clear(); deathLocations.clear(); cooldowns.clear();
         Collections.shuffle(pl);
         seeker = pl.get(0);
         hiders.addAll(pl.subList(1, pl.size()));
+
         bossBar = BossBar.bossBar(Component.text("Czas: 5:00", NamedTextColor.GREEN), 1f, BossBar.Color.GREEN, BossBar.Overlay.PROGRESS);
         pl.forEach(p -> { p.showBossBar(bossBar); p.getInventory().clear(); });
+
+        // Szukajacy zamrozony na 1 minute, chowajacy dostaja Speed II
+        seeker.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 1200, 100));
+        seeker.sendMessage(ChatColor.RED + "Poczekaj 1 minute az chowajacy sie ukryja...");
+        hiders.forEach(h -> {
+            h.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 1200, 1));
+            giveTransformPotion(h);
+            h.sendMessage(ChatColor.GREEN + "Uciekaj! Masz 1 minute na ukrycie sie!");
+        });
+        Player ad = getServer().getPlayer(ADMIN);
+        if (ad != null) { ad.getInventory().clear(); giveTransformPotion(ad); }
+
         new BukkitRunnable() {
-            int c = 5;
             public void run() {
-                if (c == 0) {
-                    pl.forEach(p -> p.showTitle(Title.title(Component.text("START!", NamedTextColor.GREEN), Component.text("Chowajcie sie!", NamedTextColor.YELLOW))));
-                    seeker.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 300, 1));
-                    seeker.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 300, 100));
-                    hiders.forEach(h -> {
-                        h.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 300, 1));
-                        h.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 300, 1));
-                        giveCompass(h);
-                    });
-                    Player ad = getServer().getPlayer(ADMIN);
-                    if (ad != null) { ad.getInventory().clear(); giveCompass(ad); }
-                    new BukkitRunnable() {
-                        public void run() {
-                            seeker.removePotionEffect(PotionEffectType.BLINDNESS);
-                            seeker.removePotionEffect(PotionEffectType.SLOWNESS);
-                            giveSeekerItems(seeker);
-                            hiders.forEach(h -> {
-                                h.removePotionEffect(PotionEffectType.SPEED);
-                                h.removePotionEffect(PotionEffectType.INVISIBILITY);
-                            });
-                        }
-                    }.runTaskLater(ChowanyPlugin.this, 300);
-                    startTimer(pl);
-                    this.cancel();
-                    return;
-                }
-                pl.forEach(p -> p.showTitle(Title.title(Component.text("" + c, NamedTextColor.RED), Component.empty())));
-                c--;
+                seeker.removePotionEffect(PotionEffectType.SLOWNESS);
+                hiders.forEach(h -> h.removePotionEffect(PotionEffectType.SPEED));
+                giveSeekerItems(seeker);
+                seeker.showTitle(Title.title(Component.text("RUSZAJ!", NamedTextColor.RED), Component.empty()));
+                startTimer(pl);
             }
-        }.runTaskTimer(this, 0, 20);
+        }.runTaskLater(this, 1200); // 1 minuta
     }
 
     void startTimer(List<Player> pl) {
@@ -176,21 +144,31 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
             int t = gameTime;
             public void run() {
                 if (t <= 0) {
-                    pl.forEach(p -> {
-                        p.sendMessage(ChatColor.GREEN + "Koniec czasu! Chowajacy wygrywaja!");
-                        p.hideBossBar(bossBar);
-                    });
-                    stopGame();
-                    cancel();
-                    return;
+                    pl.forEach(p -> { p.sendMessage(ChatColor.GREEN + "Koniec czasu! Chowajacy wygrywaja!"); p.hideBossBar(bossBar); });
+                    stopGame(); cancel(); return;
                 }
                 int m = t / 60, s = t % 60;
                 bossBar.name(Component.text("Czas: " + m + ":" + String.format("%02d", s), NamedTextColor.GREEN));
                 bossBar.progress((float) t / gameTime);
                 t--;
+                // Sprawdzanie spectatorow
+                for (Player sp : new ArrayList<>(spectators)) {
+                    if (deathLocations.containsKey(sp)) {
+                        Location death = deathLocations.get(sp);
+                        if (sp.getLocation().distance(death) > SPECTATOR_LIMIT) {
+                            sp.teleport(death);
+                            sp.sendMessage(ChatColor.RED + "Nie mozesz oddalic sie wiecej niz 100 kratek!");
+                        }
+                    }
+                }
+                // Sprawdzanie czy zostal tylko szukajacy + 1 pomocnik
+                if (hiders.isEmpty() && helpers.size() <= 1) {
+                    pl.forEach(p -> { p.sendMessage(ChatColor.GOLD + "Wszyscy znalezieni! Szukajacy wygrywa!"); p.hideBossBar(bossBar); });
+                    stopGame(); cancel();
+                }
             }
         };
-        timerTask.runTaskTimer(this, 320, 20);
+        timerTask.runTaskTimer(this, 0, 20);
     }
 
     void stopGame() {
@@ -198,7 +176,7 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         if (timerTask != null) timerTask.cancel();
         if (bossBar != null) getServer().getOnlinePlayers().forEach(p -> p.hideBossBar(bossBar));
         getServer().getOnlinePlayers().forEach(p -> {
-            undisguise(p);
+            if (disguisedPlayers.containsKey(p)) undisguise(p);
             p.getInventory().clear();
             p.removePotionEffect(PotionEffectType.BLINDNESS);
             p.removePotionEffect(PotionEffectType.SLOWNESS);
@@ -206,8 +184,11 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
             p.removePotionEffect(PotionEffectType.INVISIBILITY);
             p.removePotionEffect(PotionEffectType.GLOWING);
             p.setGameMode(GameMode.SURVIVAL);
+            p.setWalkSpeed(0.2f);
         });
-        helpers.clear(); hiders.clear(); spectators.clear(); disguisedPlayers.clear(); cooldowns.clear(); seeker = null;
+        helpers.clear(); hiders.clear(); spectators.clear();
+        disguisedPlayers.clear(); deathLocations.clear(); cooldowns.clear();
+        seeker = null;
     }
 
     @EventHandler
@@ -221,45 +202,42 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
 
     void find(Player h) {
         hiders.remove(h);
-        undisguise(h);
-        if (helpers.size() < 2) {
+        if (disguisedPlayers.containsKey(h)) undisguise(h);
+        deathLocations.put(h, h.getLocation());
+        if (helpers.isEmpty()) {
             helpers.add(h);
-            h.sendMessage(ChatColor.GOLD + "Zostales POMOCNIKIEM!");
+            h.sendMessage(ChatColor.GOLD + "Zostales POMOCNIKIEM! Pomoz szukajacemu!");
             h.getInventory().clear();
+            h.setWalkSpeed(0.2f);
         } else {
             spectators.add(h);
             h.setGameMode(GameMode.SPECTATOR);
+            h.sendMessage(ChatColor.GRAY + "Jestes Spectatorem. Nie oddalaj sie wiecej niz 100 kratek!");
         }
-        getServer().getOnlinePlayers().forEach(p -> p.sendMessage(ChatColor.YELLOW + h.getName() + " znaleziony! (" + hiders.size() + ")"));
-        if (hiders.isEmpty()) {
-            getServer().getOnlinePlayers().forEach(p -> {
-                p.sendMessage(ChatColor.RED + "SZUKAJACY WYGRYWAJA!");
-                p.hideBossBar(bossBar);
-            });
-            stopGame();
-        }
+        getServer().getOnlinePlayers().forEach(p -> p.sendMessage(ChatColor.YELLOW + h.getName() + " znaleziony! (" + hiders.size() + " pozostalo)"));
     }
 
-    void giveCompass(Player p) {
-        ItemStack i = new ItemStack(Material.COMPASS);
-        ItemMeta m = i.getItemMeta();
-        m.setDisplayName(ChatColor.LIGHT_PURPLE + "Przemiana w blok");
-        i.setItemMeta(m);
-        p.getInventory().addItem(i);
+    void giveTransformPotion(Player p) {
+        ItemStack potion = new ItemStack(Material.POTION);
+        ItemMeta meta = potion.getItemMeta();
+        meta.setDisplayName(ChatColor.LIGHT_PURPLE + "Mikstura Przemiany");
+        meta.setLore(List.of(ChatColor.GRAY + "Prawy klik = wybierz blok do przemiany"));
+        potion.setItemMeta(meta);
+        p.getInventory().addItem(potion);
     }
 
     void giveSeekerItems(Player p) {
         p.getInventory().clear();
-        ItemStack s = new ItemStack(Material.NETHERITE_SWORD);
-        ItemMeta sm = s.getItemMeta();
+        ItemStack sword = new ItemStack(Material.NETHERITE_SWORD);
+        ItemMeta sm = sword.getItemMeta();
         sm.setDisplayName(ChatColor.RED + "Miecz Szukajacego");
-        s.setItemMeta(sm);
-        p.getInventory().addItem(s);
-        ItemStack g = new ItemStack(Material.CHEST);
-        ItemMeta gm = g.getItemMeta();
+        sword.setItemMeta(sm);
+        p.getInventory().addItem(sword);
+        ItemStack gui = new ItemStack(Material.CHEST);
+        ItemMeta gm = gui.getItemMeta();
         gm.setDisplayName(ChatColor.AQUA + "Wspomagacze");
-        g.setItemMeta(gm);
-        p.getInventory().addItem(g);
+        gui.setItemMeta(gm);
+        p.getInventory().addItem(gui);
     }
 
     void openGUI(Player p) {
@@ -302,18 +280,10 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
             if (e.getCurrentItem() == null) return;
             if (cooldowns.containsKey(p)) {
                 long left = CD - ((System.currentTimeMillis() - cooldowns.get(p)) / 1000);
-                if (left > 0) {
-                    p.sendMessage(ChatColor.RED + "Poczekaj " + left + "s!");
-                    p.closeInventory();
-                    return;
-                }
+                if (left > 0) { p.sendMessage(ChatColor.RED + "Poczekaj " + left + "s!"); p.closeInventory(); return; }
             }
             if (e.getCurrentItem().getType() == Material.FIREWORK_ROCKET) {
-                if (hiders.isEmpty()) {
-                    p.sendMessage(ChatColor.RED + "Brak chowajacych!");
-                    p.closeInventory();
-                    return;
-                }
+                if (hiders.isEmpty()) { p.sendMessage(ChatColor.RED + "Brak chowajacych!"); p.closeInventory(); return; }
                 Player tgt = hiders.get(new Random().nextInt(hiders.size()));
                 tgt.getWorld().spawnParticle(Particle.FIREWORK, tgt.getLocation().add(0, 1, 0), 50, 0.5, 1.5, 0.5, 0.1);
                 p.sendMessage(ChatColor.GOLD + "Fajerwerka nad " + tgt.getName() + "!");
@@ -329,24 +299,27 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    // POPRAWIONY EVENT - BLOKUJE WSZYSTKIE AKCJE KOMPASU
     @EventHandler
-    public void onCompass(PlayerInteractEvent e) {
-        if (e.getItem() == null || e.getItem().getType() != Material.COMPASS) return;
-        // BLOKUJEMY CAŁKOWICIE domyślną akcję kompasu
-        e.setCancelled(true);
-        
-        // Tylko prawy klik
+    public void onPotionClick(PlayerInteractEvent e) {
+        if (e.getItem() == null || e.getItem().getType() != Material.POTION) return;
         if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
-        
+        e.setCancelled(true);
         Player p = e.getPlayer();
-        if (gameRunning && hiders.contains(p)) {
-            openGUI(p);
+        ItemMeta meta = e.getItem().getItemMeta();
+        if (meta == null) return;
+
+        // Sprawdzenie czy to Mikstura Przemiany (a nie Edycji)
+        if (meta.getDisplayName().contains("Przemiany")) {
+            if (gameRunning && hiders.contains(p)) {
+                openGUI(p);
+            } else if (p.getName().equalsIgnoreCase(ADMIN)) {
+                openGUI(p);
+            }
         }
     }
 
     @EventHandler
-    public void onChest(PlayerInteractEvent e) {
+    public void onChestClick(PlayerInteractEvent e) {
         if (e.getItem() == null || e.getItem().getType() != Material.CHEST) return;
         if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         e.setCancelled(true);
@@ -354,17 +327,23 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         if (gameRunning && (p.equals(seeker) || helpers.contains(p))) openHelp(p);
     }
 
-    void disguise(Player p, Material m) {
+    void disguise(Player p, Material mat) {
         undisguise(p);
-        disguisedPlayers.put(p, m);
+        disguisedPlayers.put(p, mat);
+        // Stawiamy blok dokladnie tam gdzie gracz
+        p.getWorld().getBlockAt(p.getLocation()).setType(mat);
         p.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false));
-        p.sendMessage(ChatColor.GREEN + "Przemiana w " + m.name() + ". Skocz by wrocic.");
+        p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, PotionEffect.INFINITE_DURATION, 100, false, false));
+        p.sendMessage(ChatColor.GREEN + "Przemieniles sie w " + mat.name() + ". Skocz by wrocic.");
     }
 
     void undisguise(Player p) {
         if (disguisedPlayers.containsKey(p)) {
             p.removePotionEffect(PotionEffectType.INVISIBILITY);
+            p.removePotionEffect(PotionEffectType.SLOWNESS);
+            p.getWorld().getBlockAt(p.getLocation()).setType(Material.AIR);
             disguisedPlayers.remove(p);
+            p.setWalkSpeed(0.2f);
         }
     }
 
