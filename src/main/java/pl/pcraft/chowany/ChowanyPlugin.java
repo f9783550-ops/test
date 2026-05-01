@@ -294,7 +294,7 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
                     return;
                 }
                 Player tgt = hiders.get(new Random().nextInt(hiders.size()));
-                tgt.getWorld().spawnParticle(Particle.FIREWORKS_SPARK, tgt.getLocation().add(0, 1, 0), 50, 0.5, 1.5, 0.5, 0.1);
+                tgt.getWorld().spawnParticle(Particle.FIREWORK, tgt.getLocation().add(0, 1, 0), 50, 0.5, 1.5, 0.5, 0.1);
                 p.sendMessage(ChatColor.GOLD + "Fajerwerka nad " + tgt.getName() + "!");
                 cooldowns.put(p, System.currentTimeMillis());
                 p.closeInventory();
