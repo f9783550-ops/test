@@ -13,7 +13,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -85,7 +84,7 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
                 return true;
             }
             giveCompass(p);
-            p.sendMessage(ChatColor.GREEN + "Kompas testowy! Skacz by wrocic.");
+            p.sendMessage(ChatColor.GREEN + "Kompas testowy! Prawy klik = wybierz blok.");
             return true;
         }
         if (a[0].equalsIgnoreCase("edit")) {
@@ -330,11 +329,16 @@ public class ChowanyPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    // POPRAWIONY EVENT - BLOKUJE WSZYSTKIE AKCJE KOMPASU
     @EventHandler
     public void onCompass(PlayerInteractEvent e) {
         if (e.getItem() == null || e.getItem().getType() != Material.COMPASS) return;
-        if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        // BLOKUJEMY CAŁKOWICIE domyślną akcję kompasu
         e.setCancelled(true);
+        
+        // Tylko prawy klik
+        if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        
         Player p = e.getPlayer();
         if (gameRunning && hiders.contains(p)) {
             openGUI(p);
